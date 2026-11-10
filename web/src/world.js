@@ -3,6 +3,8 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { groundMaps, barkMaps, stoneMaps, softSprite, moonTexture, fbm, rand, srand, woodMaps, metalMaps } from './textures.js';
 
+export const MAP_R = 62;
+
 export function buildWorld(scene, quality) {
   srand(4242);
   const colliders = []; // {type:'cyl'|'box', ...}
@@ -74,7 +76,7 @@ export function buildWorld(scene, quality) {
     const x = gp.getX(i), z = gp.getZ(i);
     const r = Math.hypot(x, z);
     const h = fbm(x / 240 + 0.5, z / 240 + 0.5, 6, 4) * 1.2 * Math.min(1, Math.max(0, (r - 8) / 25));
-    gp.setY(i, h + (r > 70 ? (r - 70) * 0.08 : 0));
+    gp.setY(i, h + (r > MAP_R + 3 ? (r - MAP_R - 3) * 0.25 : 0));
   }
   groundGeo.computeVertexNormals();
   const ground = new THREE.Mesh(groundGeo, new THREE.MeshStandardMaterial({ map: gm.map, normalMap: gm.normalMap, roughness: 0.96, normalScale: new THREE.Vector2(0.7, 0.7) }));
@@ -82,7 +84,7 @@ export function buildWorld(scene, quality) {
   scene.add(ground);
   const groundHeight = (x, z) => {
     const r = Math.hypot(x, z);
-    return fbm(x / 240 + 0.5, z / 240 + 0.5, 6, 4) * 1.2 * Math.min(1, Math.max(0, (r - 8) / 25)) + (r > 70 ? (r - 70) * 0.08 : 0);
+    return fbm(x / 240 + 0.5, z / 240 + 0.5, 6, 4) * 1.2 * Math.min(1, Math.max(0, (r - 8) / 25)) + (r > MAP_R + 3 ? (r - MAP_R - 3) * 0.25 : 0);
   };
 
   // ---------- grass tufts (instanced) ----------
@@ -99,7 +101,7 @@ export function buildWorld(scene, quality) {
   for (let i = 0; i < grassCount; i++) {
     let x, z;
     do {
-      const a = rand() * Math.PI * 2, r = 1.5 + Math.pow(rand(), 0.7) * 45;
+      const a = rand() * Math.PI * 2, r = 1.5 + Math.sqrt(rand()) * (MAP_R + 2);
       x = Math.cos(a) * r; z = Math.sin(a) * r;
     } while (fbm(x / 60 + 0.5, z / 60 + 0.5, 3, 3) < -0.15);
     e.set((rand() - 0.5) * 0.5, rand() * Math.PI * 2, (rand() - 0.5) * 0.5);
@@ -156,7 +158,7 @@ export function buildWorld(scene, quality) {
   }
   const trees = [];
   for (let i = 0; i < quality.trees; i++) {
-    const a = rand() * Math.PI * 2, r = 11 + Math.pow(rand(), 0.8) * 50;
+    const a = rand() * Math.PI * 2, r = 7 + Math.sqrt(rand()) * (MAP_R - 5);
     const x = Math.cos(a) * r, z = Math.sin(a) * r;
     const t = new THREE.Mesh(treeTemplates[i % treeTemplates.length], barkMat);
     const s = 0.9 + rand() * 0.8;
@@ -195,29 +197,44 @@ export function buildWorld(scene, quality) {
     }
   }
   const graveMounds = new THREE.MeshStandardMaterial({ ...groundMaps(), roughness: 1 });
-  for (let i = 0; i < quality.graves; i++) {
-    const row = Math.floor(i / 8), col = i % 8;
-    const ring = 7 + row * 3.2 + rand() * 1.2;
-    const a = (col / 8) * Math.PI * 2 + row * 0.4 + (rand() - 0.5) * 0.3;
-    const x = Math.cos(a) * ring, z = Math.sin(a) * ring;
-    const g = new THREE.Mesh(shapes[Math.floor(rand() * shapes.length)], stoneMat);
-    const s = 0.8 + rand() * 0.6;
-    g.scale.setScalar(s);
-    const gy = groundHeight(x, z);
-    g.position.set(x, gy - 0.05, z);
-    g.rotation.set((rand() - 0.5) * 0.3, -a + Math.PI / 2 + (rand() - 0.5) * 0.4, (rand() - 0.5) * 0.25);
-    g.castShadow = true; g.receiveShadow = true;
-    scene.add(g);
-    colliders.push({ type: 'cyl', x, z, r: 0.33 * s, h: 0.95 * s, kind: 'stone', obj: g });
-    // dirt mound
-    const mound = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), graveMounds);
-    mound.scale.set(0.45 * s, 0.12, 0.9 * s);
-    const dir = new THREE.Vector3(Math.cos(a), 0, Math.sin(a));
-    mound.position.set(x + dir.x * 0.9 * s, gy - 0.02, z + dir.z * 0.9 * s);
-    mound.rotation.y = -a + Math.PI / 2;
-    mound.receiveShadow = true;
-    scene.add(mound);
+  // cemetery laid out in rows across the whole map, in patches, using instancing
+  const slots = [];
+  for (let gz = -MAP_R; gz <= MAP_R; gz += 3.4) {
+    for (let gx = -MAP_R; gx <= MAP_R; gx += 2.3) {
+      const x = gx + (rand() - 0.5) * 0.5, z = gz + (rand() - 0.5) * 0.6;
+      const r = Math.hypot(x, z);
+      if (r < 4.5 || r > MAP_R - 2) continue;
+      if (fbm(x / 130 + 0.5, z / 130 + 0.5, 3, 3) < -0.05 || rand() > 0.62) continue;
+      if (colliders.some((c) => Math.hypot(c.x - x, c.z - z) < c.r + 1.2)) continue;
+      slots.push([x, z]);
+    }
   }
+  const counts = [0, 0, 0];
+  const picks = slots.map(() => { const k = Math.floor(rand() * 3); counts[k]++; return k; });
+  const graveInst = shapes.map((g, k) => {
+    const m = new THREE.InstancedMesh(g, stoneMat, Math.max(1, counts[k]));
+    m.castShadow = true; m.receiveShadow = true; m.count = 0;
+    scene.add(m); return m;
+  });
+  const moundInst = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), graveMounds, slots.length);
+  moundInst.receiveShadow = true;
+  scene.add(moundInst);
+  const tq = new THREE.Quaternion(), te = new THREE.Euler(), ts = new THREE.Vector3(), tp = new THREE.Vector3(), tm = new THREE.Matrix4();
+  slots.forEach(([x, z], i) => {
+    const k = picks[i];
+    const s = 0.8 + rand() * 0.6;
+    const gy = groundHeight(x, z);
+    const yaw = (rand() - 0.5) * 0.35;
+    te.set((rand() - 0.5) * 0.3, yaw, (rand() - 0.5) * 0.25);
+    tm.compose(tp.set(x, gy - 0.05, z), tq.setFromEuler(te), ts.set(s, s, s));
+    graveInst[k].setMatrixAt(graveInst[k].count++, tm);
+    colliders.push({ type: 'cyl', x, z, r: 0.33 * s, h: 0.95 * s, kind: 'stone' });
+    te.set(0, yaw, 0);
+    tm.compose(tp.set(x + Math.sin(yaw) * 0.9 * s, gy - 0.02, z + Math.cos(yaw) * 0.9 * s), tq.setFromEuler(te), ts.set(0.45 * s, 0.12, 0.9 * s));
+    moundInst.setMatrixAt(i, tm);
+  });
+  graveInst.forEach((m) => { m.instanceMatrix.needsUpdate = true; m.computeBoundingSphere(); });
+  moundInst.computeBoundingSphere();
 
   // ---------- lantern post next to player ----------
   const woodMat = new THREE.MeshStandardMaterial({ ...woodMaps(), roughness: 1 });
@@ -237,6 +254,120 @@ export function buildWorld(scene, quality) {
   const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: softSprite(64, 255, 160, 80), blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, opacity: 0.6 }));
   glow.position.copy(lantern.position); glow.scale.setScalar(1.2); scene.add(glow);
 
+  // ---------- boundary: old iron fence ----------
+  {
+    const n = Math.floor((Math.PI * 2 * (MAP_R + 1.5)) / 1.6);
+    const postGeo = new THREE.CylinderGeometry(0.025, 0.025, 1.7, 5);
+    postGeo.translate(0, 0.85, 0);
+    const tip = new THREE.ConeGeometry(0.05, 0.16, 4); tip.translate(0, 1.76, 0);
+    const pg = mergeGeometries([postGeo, tip]);
+    const posts = new THREE.InstancedMesh(pg, ironMat, n);
+    const m = new THREE.Matrix4();
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2, R = MAP_R + 1.5;
+      const x = Math.cos(a) * R, z = Math.sin(a) * R;
+      m.makeRotationZ((rand() - 0.5) * 0.12);
+      m.setPosition(x, groundHeight(x, z) - 0.05, z);
+      posts.setMatrixAt(i, m);
+    }
+    posts.castShadow = true;
+    scene.add(posts);
+    for (const h of [0.35, 1.45]) {
+      const rail = new THREE.Mesh(new THREE.TorusGeometry(MAP_R + 1.5, 0.022, 4, 260), ironMat);
+      rail.rotation.x = Math.PI / 2; rail.position.y = h + 0.03;
+      scene.add(rail);
+    }
+  }
+
+  // ---------- goal: the crypt ----------
+  const crypt = new THREE.Group();
+  {
+    const add = (geo, mat, x, y, z, cast = true) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = cast; m.receiveShadow = true; crypt.add(m); return m; };
+    const cryptStone = stoneMat.clone();
+    for (const k of ['map', 'normalMap', 'roughnessMap']) { cryptStone[k] = stoneMat[k].clone(); cryptStone[k].repeat.set(2.5, 2.5); cryptStone[k].needsUpdate = true; }
+    add(new THREE.BoxGeometry(4.6, 0.35, 5), cryptStone, 0, 0.1, 0);
+    add(new THREE.BoxGeometry(0.6, 0.18, 1.2), cryptStone, 0, 0.12, 2.9);           // step
+    add(new THREE.BoxGeometry(1.3, 2.8, 3.8), cryptStone, -1.3, 1.65, 0);           // left wall block
+    add(new THREE.BoxGeometry(1.3, 2.8, 3.8), cryptStone, 1.3, 1.65, 0);            // right wall block
+    add(new THREE.BoxGeometry(1.4, 0.8, 3.8), cryptStone, 0, 2.65, 0);              // lintel
+    add(new THREE.BoxGeometry(1.4, 2.1, 0.3), cryptStone, 0, 1.3, -1.75);           // back
+    // pediment roof
+    const tri = new THREE.Shape();
+    tri.moveTo(-2.1, 0); tri.lineTo(2.1, 0); tri.lineTo(0, 1.3); tri.lineTo(-2.1, 0);
+    const roof = add(new THREE.ExtrudeGeometry(tri, { depth: 4.4, bevelEnabled: false }), cryptStone, 0, 3.05, -2.2);
+    add(new THREE.BoxGeometry(4.5, 0.2, 4.6), cryptStone, 0, 3.0, 0);
+    // columns
+    for (const sx of [-1, 1]) {
+      add(new THREE.CylinderGeometry(0.17, 0.2, 2.6, 14), cryptStone, sx * 1.75, 1.6, 2.15);
+      add(new THREE.BoxGeometry(0.5, 0.2, 0.5), cryptStone, sx * 1.75, 2.9, 2.15);
+      add(new THREE.BoxGeometry(0.5, 0.2, 0.5), cryptStone, sx * 1.75, 0.37, 2.15);
+    }
+    // stone cross on top
+    add(new THREE.BoxGeometry(0.16, 1.0, 0.16), cryptStone, 0, 4.75, 0);
+    add(new THREE.BoxGeometry(0.6, 0.16, 0.16), cryptStone, 0, 4.95, 0);
+    // glowing doorway (light spilling from inside)
+    const dc = document.createElement('canvas'); dc.width = 64; dc.height = 128;
+    const dctx = dc.getContext('2d');
+    const gr = dctx.createLinearGradient(0, 128, 0, 0);
+    gr.addColorStop(0, '#8dffc0'); gr.addColorStop(0.35, '#2a9a6a'); gr.addColorStop(1, '#03140c');
+    dctx.fillStyle = gr; dctx.fillRect(0, 0, 64, 128);
+    const doorTex = new THREE.CanvasTexture(dc); doorTex.colorSpace = THREE.SRGBColorSpace;
+    const door = new THREE.Mesh(new THREE.PlaneGeometry(1.15, 2.2), new THREE.MeshBasicMaterial({ map: doorTex, fog: false }));
+    door.position.set(0, 1.35, 1.0); crypt.add(door);
+    // open iron gate leaf
+    const gate = new THREE.Group(); gate.position.set(-0.6, 0.3, 1.9); gate.rotation.y = -1.1;
+    for (let i = 0; i < 6; i++) { const b = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 2.1, 4), ironMat); b.position.set(0.1 + i * 0.19, 1.05, 0); gate.add(b); }
+    for (const h of [0.2, 1.9]) { const b = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.04, 0.03), ironMat); b.position.set(0.6, h, 0); gate.add(b); }
+    crypt.add(gate);
+    // torches
+    crypt.userData.flames = [];
+    const flameTex = softSprite(64, 255, 190, 110);
+    for (const sx of [-1, 1]) {
+      add(new THREE.CylinderGeometry(0.04, 0.05, 1.3, 6), ironMat, sx * 1.75, 0.95, 3.1);
+      add(new THREE.CylinderGeometry(0.13, 0.06, 0.18, 8), ironMat, sx * 1.75, 1.65, 3.1);
+      const f = new THREE.Sprite(new THREE.SpriteMaterial({ map: flameTex, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, color: 0xffa040 }));
+      f.position.set(sx * 1.75, 1.95, 3.1); f.scale.set(0.45, 0.8, 1);
+      crypt.add(f); crypt.userData.flames.push(f);
+    }
+    // eerie light from inside
+    const gl = new THREE.PointLight(0x7dffb0, 14, 16, 1.6);
+    gl.position.set(0, 1.4, 2.6); crypt.add(gl); crypt.userData.light = gl;
+    // beacon beam visible through the fog from anywhere
+    const beamMat = new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false,
+      uniforms: { time: { value: 0 } },
+      vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+      fragmentShader: `varying vec2 vUv; uniform float time;
+        void main(){
+          float a = (1.0 - vUv.y) * (1.0 - vUv.y);
+          float ripple = 0.75 + 0.25 * sin(vUv.y * 40.0 - time * 3.0 + vUv.x * 12.566);
+          gl_FragColor = vec4(vec3(0.35, 1.0, 0.65) * a * ripple * 0.35, 1.0);
+        }`,
+    });
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 1.4, 70, 24, 1, true), beamMat);
+    beam.geometry.translate(0, 35, 0);
+    beam.position.set(0, 0, 0.5); beam.renderOrder = 5;
+    crypt.add(beam); crypt.userData.beam = beamMat;
+    void roof;
+  }
+  scene.add(crypt);
+  const cryptCollider = { type: 'cyl', x: 0, z: 0, r: 2.5, h: 5, kind: 'stone' };
+  colliders.push(cryptCollider);
+  crypt.visible = false;
+  const goal = {
+    obj: crypt,
+    collider: cryptCollider,
+    trigger: new THREE.Vector3(),
+    place(x, z, faceX, faceZ) {
+      crypt.position.set(x, groundHeight(x, z), z);
+      crypt.rotation.y = Math.atan2(faceX - x, faceZ - z);
+      crypt.visible = true;
+      cryptCollider.x = x; cryptCollider.z = z;
+      this.trigger.set(x + Math.sin(crypt.rotation.y) * 3.3, 0, z + Math.cos(crypt.rotation.y) * 3.3);
+      this.trigger.y = groundHeight(this.trigger.x, this.trigger.z);
+    },
+  };
+
   // ---------- ground mist ----------
   const mistTex = softSprite(128, 170, 185, 200, true);
   const mist = [];
@@ -251,7 +382,16 @@ export function buildWorld(scene, quality) {
 
   // ---------- update ----------
   let flashT = 0, nextFlash = 12 + Math.random() * 20;
-  function update(dt, time, audio) {
+  function update(dt, time, audio, player) {
+    if (player) {
+      moonLight.position.set(player.x - 24, 30, player.z - 40);
+      moonLight.target.position.set(player.x, 0, player.z);
+    }
+    if (crypt.visible) {
+      crypt.userData.beam.uniforms.time.value = time;
+      crypt.userData.flames.forEach((f, i) => { const k = 0.85 + Math.sin(time * 13 + i * 2) * 0.1 + Math.random() * 0.1; f.scale.set(0.45 * k, 0.8 * k, 1); });
+      crypt.userData.light.intensity = 13 + Math.sin(time * 2.2) * 3;
+    }
     // lantern flicker
     lanternLight.intensity = 8 + Math.sin(time * 17) * 0.6 + Math.sin(time * 7.3) * 0.8 + (Math.random() - 0.5) * 0.8;
     glow.material.opacity = 0.5 + (lanternLight.intensity - 8) * 0.05;
@@ -259,8 +399,9 @@ export function buildWorld(scene, quality) {
     // mist drift
     for (const m of mist) {
       m.position.x += m.userData.v.x * dt; m.position.z += m.userData.v.y * dt;
-      const r = Math.hypot(m.position.x, m.position.z);
-      if (r > 45) { m.position.x *= -0.9; m.position.z *= -0.9; }
+      const px = player ? player.x : 0, pz = player ? player.z : 0;
+      const dx = m.position.x - px, dz = m.position.z - pz;
+      if (Math.hypot(dx, dz) > 42) { m.position.x = px - dx * 0.9; m.position.z = pz - dz * 0.9; }
     }
     // lightning
     nextFlash -= dt;
@@ -277,5 +418,5 @@ export function buildWorld(scene, quality) {
     }
   }
 
-  return { colliders, groundHeight, update, moonLight };
+  return { colliders, groundHeight, update, moonLight, goal };
 }

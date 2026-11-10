@@ -465,6 +465,63 @@ export class Audio3D {
       o.start(t); o.stop(t + 4.5);
     });
   }
+  // player's own footsteps on dirt and dead grass
+  playerStep(run) {
+    const ctx = this.ctx, t = ctx.currentTime;
+    const s = this._noiseSrc(); const f = ctx.createBiquadFilter();
+    f.type = 'bandpass'; f.Q.value = 0.9; f.frequency.value = 700 + Math.random() * 500;
+    const g = ctx.createGain(); this._env(g, t, 0.008, run ? 0.4 : 0.28, 0.13);
+    s.connect(f).connect(g).connect(this.sfx); s.start(t, Math.random()); s.stop(t + 0.17);
+    // crunch of dry grass
+    const c = this._noiseSrc(); const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 3500;
+    const cg = ctx.createGain(); this._env(cg, t + 0.02, 0.004, 0.07, 0.07);
+    c.connect(hp).connect(cg).connect(this.sfx); c.start(t + 0.02, Math.random()); c.stop(t + 0.1);
+    const o = ctx.createOscillator(); o.frequency.setValueAtTime(75, t); o.frequency.exponentialRampToValueAtTime(40, t + 0.08);
+    const og = ctx.createGain(); this._env(og, t, 0.004, 0.25, 0.09);
+    o.connect(og).connect(this.sfx); o.start(t); o.stop(t + 0.12);
+  }
+
+  // looping ghostly choir-like hum coming from the goal crypt
+  goalHum() {
+    if (this._hum) return this._hum;
+    const ctx = this.ctx, t = ctx.currentTime;
+    const p = this.ctx.createPanner();
+    p.panningModel = 'HRTF'; p.distanceModel = 'inverse'; p.refDistance = 4; p.rolloffFactor = 0.8; p.maxDistance = 120;
+    const out = ctx.createGain(); out.gain.value = 0;
+    p.connect(out); out.connect(this.master); out.connect(this.reverbSend);
+    const mix = ctx.createGain(); mix.gain.value = 0.12;
+    mix.connect(p);
+    [220, 261.6, 329.6, 440.8, 221.3].forEach((f, i) => {
+      const o = ctx.createOscillator(); o.type = i === 4 ? 'triangle' : 'sine'; o.frequency.value = f;
+      const g = ctx.createGain(); g.gain.value = 0.25;
+      const l = ctx.createOscillator(); l.frequency.value = 0.15 + i * 0.07;
+      const lg = ctx.createGain(); lg.gain.value = 0.18;
+      l.connect(lg).connect(g.gain);
+      o.connect(g).connect(mix); o.start(t); l.start(t);
+    });
+    // airy shimmer
+    const n = this._noiseSrc(this.noiseBuf, true); const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 2600; bp.Q.value = 6;
+    const ng = ctx.createGain(); ng.gain.value = 0.15; n.connect(bp).connect(ng).connect(mix); n.start(t);
+    this._hum = {
+      setPos: (pos) => this.setPos(p, pos),
+      on: (v) => out.gain.setTargetAtTime(v ? 1 : 0, ctx.currentTime, 0.6),
+    };
+    return this._hum;
+  }
+
+  levelComplete() {
+    const ctx = this.ctx, t = ctx.currentTime;
+    [261.6, 329.6, 392, 523.2].forEach((f, i) => {
+      const st = t + i * 0.18;
+      [1, 2.01, 3.02].forEach((m, k) => {
+        const o = ctx.createOscillator(); o.frequency.value = f * m;
+        const g = ctx.createGain(); this._env(g, st, 0.01, 0.22 / (k + 1), 2.5);
+        o.connect(g); g.connect(this.master); g.connect(this.reverbSend);
+        o.start(st); o.stop(st + 2.6);
+      });
+    });
+  }
+
   pickup() {
     const ctx = this.ctx, t = ctx.currentTime;
     const s = this._noiseSrc(); const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 3500; f.Q.value = 3;
