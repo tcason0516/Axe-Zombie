@@ -20,7 +20,7 @@ A new APK is built automatically by GitHub Actions every time you push to `main`
 | Pause | ❚❚ button or the Android back button |
 | Desktop | WASD to move, Shift to run, drag the mouse or use the arrow keys to look, Space to throw |
 
-**The goal:** every level hides a crypt somewhere in the graveyard. Follow the green arrow, the distance counter, the green light beam in the sky and the ghostly hum to find it. Reach its doorway to clear the level, earn bonus points and get 30 health back. Each level puts the crypt farther away and sends more zombies, and more of them, from wave 3 on, are fast runners. Most zombies spawn between you and the crypt, so you have to fight through them.
+**The goal:** every level hides a crypt somewhere in the graveyard. Follow the green arrow, the distance counter, the green light beam in the sky and the ghostly hum to find it. Reach its doorway to clear the level, earn bonus points and get 30 health back. Each level puts the crypt farther away and sends more zombies, and from level 3 on, some of them are fast runners. Most zombies spawn between you and the crypt, so you have to fight through them.
 
 - **Headshot**: the zombie dies instantly and its head comes off. Back-to-back headshots raise a score multiplier up to **x5**.
 - **Body hit**: the zombie staggers. It takes three body hits to bring one down, and a body hit resets your combo.
