@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Axe Zombie</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #000; font-family: 'Trebuchet MS', 'Segoe UI', Roboto, sans-serif; color: #e8e0d0; touch-action: none; }
+  #game canvas { display: block; position: fixed; inset: 0; }
+  .hidden { display: none !important; }
+  #vignette { position: fixed; inset: 0; pointer-events: none; background: radial-gradient(ellipse at center, rgba(0,0,0,0) 45%, rgba(0,0,0,0.75) 100%); }
+  #grain { position: fixed; inset: -50%; pointer-events: none; opacity: 0.07; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); animation: grain 0.5s steps(4) infinite; }
+  @keyframes grain { 0%{transform:translate(0,0)} 25%{transform:translate(-5%,3%)} 50%{transform:translate(4%,-4%)} 75%{transform:translate(-3%,-2%)} }
+  #damage { position: fixed; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(ellipse at center, rgba(120,0,0,0) 30%, rgba(150,0,0,0.85) 100%); }
+  #lowhp { position: fixed; inset: 0; pointer-events: none; opacity: 0; transition: opacity 1s; background: radial-gradient(ellipse at center, rgba(80,0,0,0) 40%, rgba(110,0,0,0.6) 100%); animation: pulse 0.75s infinite; }
+  @keyframes pulse { 0%,100% { filter: brightness(1); } 30% { filter: brightness(1.8); } }
+
+  #touch { position: fixed; inset: 0; }
+  #hud { position: fixed; inset: 0; pointer-events: none; }
+  #hud > * { pointer-events: none; }
+  #crosshair { position: fixed; left: 50%; top: 50%; width: 26px; height: 26px; transform: translate(-50%,-50%); }
+  #crosshair::before, #crosshair::after { content: ''; position: absolute; background: rgba(255,240,220,0.85); box-shadow: 0 0 3px #000; }
+  #crosshair::before { left: 12px; top: 0; width: 2px; height: 26px; clip-path: polygon(0 0,100% 0,100% 35%,0 35%,0 65%,100% 65%,100% 100%,0 100%); }
+  #crosshair::after { top: 12px; left: 0; height: 2px; width: 26px; clip-path: polygon(0 0,35% 0,35% 100%,0 100%,0 0,65% 0,100% 0,100% 100%,65% 100%); }
+  #crosshair i { position: absolute; left: 11px; top: 11px; width: 4px; height: 4px; border-radius: 50%; background: #fff; box-shadow: 0 0 3px #000; }
+  #hitmark { position: fixed; left: 50%; top: 50%; width: 44px; height: 44px; transform: translate(-50%,-50%) rotate(45deg); opacity: 0; }
+  #hitmark::before, #hitmark::after { content: ''; position: absolute; background: #fff; }
+  #hitmark::before { left: 21px; top: 0; width: 3px; height: 44px; clip-path: polygon(0 0,100% 0,100% 30%,0 30%,0 70%,100% 70%,100% 100%,0 100%); }
+  #hitmark::after { top: 21px; left: 0; height: 3px; width: 44px; clip-path: polygon(0 0,30% 0,30% 100%,0 100%,0 0,70% 0,100% 0,100% 100%,70% 100%); }
+  #hitmark.head::before, #hitmark.head::after { background: #ff3020; }
+  #hitmark.show { animation: hm 0.35s ease-out; }
+  @keyframes hm { 0% { opacity: 1; transform: translate(-50%,-50%) rotate(45deg) scale(1.4); } 100% { opacity: 0; transform: translate(-50%,-50%) rotate(45deg) scale(0.9); } }
+
+  #topbar { position: fixed; top: max(12px, env(safe-area-inset-top)); left: 0; right: 0; display: flex; justify-content: space-between; align-items: flex-start; padding: 0 max(18px, env(safe-area-inset-left)); }
+  #hp { width: 32vw; max-width: 280px; }
+  #hp label { font-size: 12px; letter-spacing: 3px; opacity: 0.8; }
+  #hpbar { height: 12px; background: rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.25); border-radius: 3px; overflow: hidden; margin-top: 3px; }
+  #hpfill { height: 100%; width: 100%; background: linear-gradient(#c33,#811); transition: width 0.3s; }
+  #hpfill.low { background: linear-gradient(#f22,#a00); animation: blink 0.6s infinite; }
+  @keyframes blink { 50% { opacity: 0.5; } }
+  #scorebox { text-align: center; text-shadow: 0 2px 6px #000; }
+  #score { font-size: 34px; font-weight: bold; color: #f2e6c8; line-height: 1; }
+  #wave { font-size: 13px; letter-spacing: 4px; color: #c9a36a; margin-top: 4px; }
+  #pauseBtn { pointer-events: auto !important; width: 44px; height: 44px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.35); background: rgba(0,0,0,0.4); color: #fff; font-size: 16px; }
+
+  #axes { position: fixed; left: max(22px, env(safe-area-inset-left)); bottom: 22px; display: flex; gap: 6px; align-items: flex-end; }
+  #axes i { width: 18px; height: 34px; display: block; opacity: 0.25; background: no-repeat center/contain url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 40'><rect x='8' y='6' width='4' height='34' rx='2' fill='%23a87a4a'/><path d='M7 2 h6 q6 2 7 10 q-4 -2 -7 -1 h-6z' fill='%23d0d4da'/></svg>"); filter: drop-shadow(0 0 3px #000); }
+  #axes i.on { opacity: 1; }
+  #axes.empty { animation: shake 0.3s; }
+  @keyframes shake { 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+  #regenbar { position: fixed; left: max(22px, env(safe-area-inset-left)); bottom: 14px; width: 114px; height: 3px; background: rgba(255,255,255,0.12); }
+  #regen { height: 100%; width: 0; background: #c9a36a; }
+
+  #throwBtn { pointer-events: auto !important; position: fixed; right: max(28px, env(safe-area-inset-right)); bottom: 28px; width: 104px; height: 104px; border-radius: 50%; border: 2px solid rgba(255,220,180,0.55); background: radial-gradient(circle at 40% 35%, rgba(140,40,20,0.75), rgba(40,8,4,0.8)); display: flex; align-items: center; justify-content: center; box-shadow: 0 0 18px rgba(0,0,0,0.7), inset 0 0 12px rgba(0,0,0,0.6); transition: transform 0.08s; }
+  #throwBtn.down { transform: scale(0.9); }
+  #throwBtn svg { width: 52px; height: 52px; }
+
+  #indicators .ind { position: fixed; width: 0; height: 0; border-left: 14px solid transparent; border-right: 14px solid transparent; border-bottom: 26px solid rgba(220,20,10,0.9); filter: drop-shadow(0 0 6px rgba(255,0,0,0.8)); }
+
+  #msg { position: fixed; top: 26%; left: 0; right: 0; text-align: center; opacity: 0; text-shadow: 0 3px 12px #000; }
+  #msg b { display: block; font-size: 52px; letter-spacing: 8px; color: #e9d8b0; font-family: Georgia, serif; }
+  #msg span { font-size: 16px; letter-spacing: 3px; color: #c9a36a; }
+  #msg.show { animation: msg 3s ease-out forwards; }
+  @keyframes msg { 0% { opacity: 0; transform: scale(1.3); } 12% { opacity: 1; transform: scale(1); } 75% { opacity: 1; } 100% { opacity: 0; } }
+
+  #popups { position: fixed; left: 50%; top: 58%; transform: translateX(-50%); }
+  .popup { position: absolute; left: 50%; transform: translateX(-50%); white-space: nowrap; text-align: center; animation: pop 1.3s ease-out forwards; text-shadow: 0 2px 6px #000; }
+  .popup b { display: block; font-size: 26px; color: #fff; letter-spacing: 3px; }
+  .popup.red b { color: #ff3a2a; }
+  .popup span { font-size: 18px; color: #f0d090; }
+  .popup.hint span { font-size: 13px; color: #bbb; }
+  @keyframes pop { 0% { opacity: 0; transform: translate(-50%, 10px) scale(0.7); } 15% { opacity: 1; transform: translate(-50%, 0) scale(1.1); } 30% { transform: translate(-50%, 0) scale(1); } 100% { opacity: 0; transform: translate(-50%, -50px); } }
+
+  .screen { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; background: radial-gradient(ellipse at center, rgba(0,0,0,0.35), rgba(0,0,0,0.85)); padding: 20px; }
+  .title { font-family: Georgia, 'Times New Roman', serif; font-size: min(15vw, 92px); letter-spacing: 6px; color: #d8cbb0; margin: 0; line-height: 1; text-shadow: 0 0 30px rgba(160,0,0,0.6), 0 4px 0 #300, 0 6px 16px #000; }
+  .title em { color: #a3150c; font-style: normal; }
+  .sub { color: #b9a780; letter-spacing: 4px; font-size: 13px; margin: 10px 0 22px; }
+  .btn { pointer-events: auto; font: inherit; font-size: 20px; letter-spacing: 4px; padding: 14px 44px; margin: 6px; color: #f3e6cc; background: linear-gradient(#7a1a10, #3e0904); border: 1px solid #c86a4a; border-radius: 4px; box-shadow: 0 4px 16px rgba(0,0,0,0.7); }
+  .btn.alt { background: rgba(0,0,0,0.5); border-color: rgba(255,255,255,0.3); font-size: 15px; padding: 10px 30px; }
+  .help { max-width: 560px; font-size: 14px; line-height: 1.6; color: #cfc2a6; margin-top: 18px; }
+  .help b { color: #f0d090; }
+  .row { display: flex; gap: 10px; align-items: center; justify-content: center; margin-top: 14px; font-size: 13px; color: #aaa; }
+  .stats { display: grid; grid-template-columns: auto auto; gap: 4px 26px; font-size: 16px; margin: 16px 0; text-align: left; }
+  .stats span:nth-child(even) { color: #f0d090; text-align: right; }
+  #newBest { color: #ff5a3a; letter-spacing: 4px; font-size: 16px; animation: blink 0.8s infinite; }
+  #loading { background: #050505; }
+  #loadwrap { width: 60vw; max-width: 360px; height: 4px; background: #222; margin-top: 20px; }
+  #loadbar { height: 100%; width: 0; background: #a3150c; transition: width 0.2s; }
+  #loadtxt { margin-top: 10px; font-size: 12px; letter-spacing: 3px; color: #888; }
+  #rotate { display: none; }
+  @media (orientation: portrait) and (max-width: 700px) { #rotate { display: flex; z-index: 50; background: #000; } }
+</style>
+</head>
+<body>
+<div id="game"></div>
+<div id="vignette"></div>
+<div id="lowhp"></div>
+<div id="damage"></div>
+<div id="grain"></div>
+<div id="touch"></div>
+
+<div id="hud" class="hidden">
+  <div id="indicators"></div>
+  <div id="crosshair"><i></i></div>
+  <div id="hitmark"></div>
+  <div id="topbar">
+    <div id="hp"><label>HEALTH</label><div id="hpbar"><div id="hpfill"></div></div></div>
+    <div id="scorebox"><div id="score">0</div><div id="wave">WAVE 1</div></div>
+    <button id="pauseBtn">❚❚</button>
+  </div>
+  <div id="axes"></div>
+  <div id="regenbar"><div id="regen"></div></div>
+  <div id="throwBtn"><svg viewBox="0 0 40 40"><rect x="18" y="10" width="4" height="28" rx="2" fill="#c49060" transform="rotate(30 20 20)"/><path d="M14 4 h8 q10 3 12 15 q-7 -4 -12 -2 h-8z" fill="#e0e4ea" transform="rotate(30 20 20)"/></svg></div>
+  <div id="msg"></div>
+  <div id="popups"></div>
+</div>
+
+<div id="loading" class="screen">
+  <h1 class="title">AXE <em>ZOMBIE</em></h1>
+  <div id="loadwrap"><div id="loadbar"></div></div>
+  <div id="loadtxt">Loading</div>
+</div>
+
+<div id="menu" class="screen hidden">
+  <h1 class="title">AXE <em>ZOMBIE</em></h1>
+  <div class="sub">SURVIVE THE GRAVEYARD</div>
+  <button class="btn" id="playBtn">PLAY</button>
+  <div class="help">
+    <b>Drag</b> anywhere to look around · <b>Tap</b> the screen or the <b>axe button</b> to throw.<br>
+    Only a <b>headshot</b> drops a zombie instantly. Body hits just slow them down.<br>
+    Chain headshots for up to <b>x5</b> score. Red arrows warn you of zombies behind you.<br>
+    🎧 Headphones recommended. Zombie groans are 3D positioned.
+  </div>
+  <div class="row">Look sensitivity <input type="range" id="sens" min="0.4" max="2.5" step="0.1"></div>
+  <div class="row">Best score: <b id="bestMenu" style="color:#f0d090">0</b></div>
+</div>
+
+<div id="paused" class="screen hidden">
+  <h1 class="title" style="font-size:56px">PAUSED</h1>
+  <button class="btn" id="resumeBtn">RESUME</button>
+  <button class="btn alt" id="quitBtn">MAIN MENU</button>
+</div>
+
+<div id="over" class="screen hidden">
+  <h1 class="title" style="font-size:min(12vw,72px)">YOU <em>DIED</em></h1>
+  <div id="newBest" class="hidden">NEW BEST SCORE!</div>
+  <div class="stats">
+    <span>Score</span><span id="finalScore">0</span>
+    <span>Wave reached</span><span id="finalWave">0</span>
+    <span>Zombies killed</span><span id="finalKills">0</span>
+    <span>Headshots</span><span id="finalHead">0</span>
+    <span>Accuracy</span><span id="finalAcc">0%</span>
+    <span>Best</span><span id="bestOver">0</span>
+  </div>
+  <button class="btn" id="againBtn">PLAY AGAIN</button>
+  <button class="btn alt" id="menuBtn">MAIN MENU</button>
+</div>
+
+<div id="rotate" class="screen"><div class="sub">Rotate your device to landscape</div></div>
+
+<script src="game.js"></script>
+</body>
+</html>
