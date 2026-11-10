@@ -37,6 +37,17 @@
   #hp label { font-size: 12px; letter-spacing: 3px; opacity: 0.8; }
   #hpbar { height: 12px; background: rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.25); border-radius: 3px; overflow: hidden; margin-top: 3px; }
   #hpfill { height: 100%; width: 100%; background: linear-gradient(#c33,#811); transition: width 0.3s; }
+  #stambar { height: 5px; background: rgba(0,0,0,0.55); border-radius: 2px; overflow: hidden; margin-top: 4px; }
+  #stamfill { height: 100%; width: 100%; background: linear-gradient(#e8c25a,#a8801e); }
+  #stamfill.out { background: #7a5a20; animation: blink 0.5s infinite; }
+  #hold { position: fixed; left: 50%; bottom: 26%; transform: translateX(-50%); width: min(46vw, 360px); text-align: center; text-shadow: 0 2px 6px #000; }
+  #holdtxt { font-size: 13px; letter-spacing: 3px; color: #8dffc0; margin-bottom: 6px; }
+  #holdbar { height: 10px; border: 1px solid rgba(140,255,190,0.6); background: rgba(0,0,0,0.6); border-radius: 5px; overflow: hidden; }
+  #holdfill { height: 100%; width: 0; background: linear-gradient(90deg,#2a9a6a,#8dffc0); box-shadow: 0 0 10px #5f5; }
+  #fade { position: fixed; inset: 0; background: #000; opacity: 0; pointer-events: none; transition: opacity 1.2s; display: flex; align-items: center; justify-content: center; text-align: center; z-index: 20; }
+  #fade.on { opacity: 1; }
+  #fadeTxt b { display: block; font-family: Georgia, serif; font-size: 40px; letter-spacing: 6px; color: #e9d8b0; }
+  #fadeTxt span { color: #8dffc0; letter-spacing: 3px; font-size: 15px; }
   #hpfill.low { background: linear-gradient(#f22,#a00); animation: blink 0.6s infinite; }
   @keyframes blink { 50% { opacity: 0.5; } }
   #scorebox { text-align: center; text-shadow: 0 2px 6px #000; }
@@ -44,12 +55,12 @@
   #wave { font-size: 13px; letter-spacing: 4px; color: #c9a36a; margin-top: 4px; }
   #pauseBtn { pointer-events: auto !important; width: 44px; height: 44px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.35); background: rgba(0,0,0,0.4); color: #fff; font-size: 16px; }
 
-  #axes { position: fixed; left: max(18px, env(safe-area-inset-left)); top: max(48px, calc(env(safe-area-inset-top) + 36px)); display: flex; gap: 5px; align-items: flex-end; }
+  #axes { position: fixed; left: max(18px, env(safe-area-inset-left)); top: max(56px, calc(env(safe-area-inset-top) + 44px)); display: flex; gap: 5px; align-items: flex-end; }
   #axes i { width: 14px; height: 28px; display: block; opacity: 0.25; background: no-repeat center/contain url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 40'><rect x='8' y='6' width='4' height='34' rx='2' fill='%23a87a4a'/><path d='M7 2 h6 q6 2 7 10 q-4 -2 -7 -1 h-6z' fill='%23d0d4da'/></svg>"); filter: drop-shadow(0 0 3px #000); }
   #axes i.on { opacity: 1; }
   #axes.empty { animation: shake 0.3s; }
   @keyframes shake { 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
-  #regenbar { position: fixed; left: max(18px, env(safe-area-inset-left)); top: max(82px, calc(env(safe-area-inset-top) + 70px)); width: 90px; height: 3px; background: rgba(255,255,255,0.12); }
+  #regenbar { position: fixed; left: max(18px, env(safe-area-inset-left)); top: max(90px, calc(env(safe-area-inset-top) + 78px)); width: 90px; height: 3px; background: rgba(255,255,255,0.12); }
   #regen { height: 100%; width: 0; background: #c9a36a; }
 
   #throwBtn { pointer-events: auto !important; position: fixed; right: max(196px, calc(env(safe-area-inset-right) + 176px)); bottom: 46px; width: 96px; height: 96px; border-radius: 50%; border: 2px solid rgba(255,220,180,0.55); background: radial-gradient(circle at 40% 35%, rgba(140,40,20,0.75), rgba(40,8,4,0.8)); display: flex; align-items: center; justify-content: center; box-shadow: 0 0 18px rgba(0,0,0,0.7), inset 0 0 12px rgba(0,0,0,0.6); transition: transform 0.08s; }
@@ -117,7 +128,7 @@
   <div id="crosshair"><i></i></div>
   <div id="hitmark"></div>
   <div id="topbar">
-    <div id="hp"><label>HEALTH</label><div id="hpbar"><div id="hpfill"></div></div></div>
+    <div id="hp"><label>HEALTH</label><div id="hpbar"><div id="hpfill"></div></div><div id="stambar"><div id="stamfill"></div></div></div>
     <div id="scorebox"><div id="score">0</div><div id="wave">LEVEL 1</div></div>
     <button id="pauseBtn">❚❚</button>
   </div>
@@ -127,6 +138,7 @@
   <div id="moveZone" class="zone"><div id="moveBase" class="stick"><div class="lbl">MOVE</div><div id="moveKnob" class="knob"></div></div></div>
   <div id="lookZone" class="zone"><div id="lookBase" class="stick"><div class="lbl">LOOK</div><div id="lookKnob" class="knob"></div></div></div>
   <div id="throwBtn"><svg viewBox="0 0 40 40"><rect x="18" y="10" width="4" height="28" rx="2" fill="#c49060" transform="rotate(30 20 20)"/><path d="M14 4 h8 q10 3 12 15 q-7 -4 -12 -2 h-8z" fill="#e0e4ea" transform="rotate(30 20 20)"/></svg></div>
+  <div id="hold" class="hidden"><div id="holdtxt">BREAKING IN…</div><div id="holdbar"><div id="holdfill"></div></div></div>
   <div id="msg"></div>
   <div id="popups"></div>
 </div>
@@ -139,11 +151,12 @@
 
 <div id="menu" class="screen hidden">
   <h1 class="title">AXE <em>ZOMBIE</em></h1>
-  <div class="sub">SURVIVE THE GRAVEYARD</div>
+  <div class="sub">SURVIVE THE SUBURBS</div>
   <button class="btn" id="playBtn">PLAY</button>
   <div class="help">
-    <b>Left stick</b> to move (push all the way to run) · <b>Right stick</b> or drag to look · <b>Axe button</b> or tap to throw.<br>
-    Each level, fight your way to the <b>glowing crypt</b>. Follow the green arrow and the beam of light.<br>
+    <b>Left stick</b> to move (push all the way to run, which uses stamina) · <b>Right stick</b> or drag to look · <b>Axe button</b> or tap to throw.<br>
+    Each level, find the <b>safe house</b> hidden somewhere in the neighborhood. The green arrow shows its direction, not the way there.<br>
+    Then <b>hold the door</b> while you break in. The noise brings every zombie nearby.<br>
     Only a <b>headshot</b> drops a zombie instantly. Chain headshots for up to <b>x5</b> score.<br>
     🎧 Headphones recommended. Zombie groans are 3D positioned.
   </div>
@@ -172,6 +185,7 @@
   <button class="btn alt" id="menuBtn">MAIN MENU</button>
 </div>
 
+<div id="fade"><div id="fadeTxt"></div></div>
 <div id="rotate" class="screen"><div class="sub">Rotate your device to landscape</div></div>
 
 <script src="game.js"></script>

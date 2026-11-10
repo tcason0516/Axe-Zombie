@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { buildWorld, MAP_R } from './world.js';
+import { buildWorld, HALF } from './world.js';
 import { Zombie, buildZombieMaterials } from './zombie.js';
 import { Audio3D } from './audio.js';
 import { woodMaps, metalMaps, softSprite, bloodSplatTexture } from './textures.js';
@@ -7,12 +7,12 @@ import { woodMaps, metalMaps, softSprite, bloodSplatTexture } from './textures.j
 const $ = (id) => document.getElementById(id);
 const isMobile = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent) || 'ontouchstart' in window;
 const QUALITY = isMobile
-  ? { shadow: 1024, grass: 9000, trees: 42, graves: 0, mist: 40, pr: Math.min(window.devicePixelRatio, 1.5) }
-  : { shadow: 2048, grass: 16000, trees: 52, graves: 0, mist: 55, pr: Math.min(window.devicePixelRatio, 2) };
+  ? { shadow: 1024, grass: 8000, trees: 40, mist: 34, pr: Math.min(window.devicePixelRatio, 1.5) }
+  : { shadow: 2048, grass: 20000, trees: 60, mist: 55, pr: Math.min(window.devicePixelRatio, 2) };
 
 const AXE_SPEED = 26, GRAVITY = 6.0, SPIN = 13; // m/s, m/s^2, rad/s
 const MAX_AXES = 5, AXE_REGEN = 1.0, THROW_CD = 0.33;
-const EYE = 1.65, WALK = 3.0, RUN = 4.6, PLAYER_R = 0.35;
+const EYE = 1.65, WALK = 2.5, RUN = 4.3, PLAYER_R = 0.35;
 
 const vibrate = (ms) => {
   try { if (window.AndroidBridge) window.AndroidBridge.vibrate(ms); else if (navigator.vibrate) navigator.vibrate(ms); } catch (_) {}
@@ -41,7 +41,7 @@ class Game {
     const scene = this.scene = new THREE.Scene();
     const camera = this.camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.05, 500);
     camera.rotation.order = 'YXZ';
-    this.player = new THREE.Vector3(0, 0, 0);
+    this.player = this.world ? this.world.start.clone() : new THREE.Vector3();
     this.move = { x: 0, y: 0 }; this.look = { x: 0, y: 0 }; this.keys = {};
     camera.position.set(0, EYE, 0);
     scene.add(camera);
@@ -53,6 +53,7 @@ class Game {
 
     await setProg(15, 'Digging graves');
     this.world = buildWorld(scene, QUALITY);
+    this.player.copy(this.world.start);
     await setProg(55, 'Raising the dead');
     buildZombieMaterials();
     await setProg(80, 'Sharpening axes');
@@ -332,7 +333,8 @@ class Game {
     this.health = 100; this.score = 0; this.kills = 0; this.headshots = 0; this.combo = 0; this.thrown = 0;
     this.axes = MAX_AXES; this.regen = 0; this.cd = 0;
     this.level = 0; this.yaw = 0; this.pitch = 0;
-    this.player.set(0, 0, 0); this.stepPh = 0;
+    this.player.copy(this.world.start); this.stepPh = 0; this.stamina = 100; this.exhausted = false;
+    this.world.goal.house = null; this.levelDone = 0; this.cleared = false; $('fade').classList.remove('on');
     (this._resetSticks || []).forEach((f) => f());
     this.audio.heartbeatOn = false;
     ['menu', 'over', 'paused'].forEach((id) => $(id).classList.add('hidden'));
@@ -363,62 +365,68 @@ class Game {
   _startLevel() {
     this.level++;
     const L = this.level;
-    this.maxAlive = Math.min(16, 3 + L * 2);
-    this.spawnInterval = Math.max(0.6, 3.0 - L * 0.3);
-    this.spawnT = 2;
+    this.maxAlive = Math.min(18, 5 + L * 2);
+    this.spawnInterval = Math.max(0.5, 2.4 - L * 0.25);
+    this.spawnT = 1;
     this.levelDone = 0;
-    // choose a crypt location far enough from the player, clear of obstacles, inside the fence
-    const want = Math.min(55, 32 + L * 6);
-    let best = null, bestScore = -1;
-    for (let i = 0; i < 400; i++) {
-      const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * (MAP_R - 7);
-      const x = Math.cos(a) * r, z = Math.sin(a) * r;
-      const d = Math.hypot(x - this.player.x, z - this.player.z);
-      if (this.world.colliders.some((c) => c !== this.world.goal.collider && Math.hypot(c.x - x, c.z - z) < c.r + 3.6)) continue;
-      if (Math.hypot(x, z) < 6) continue;
-      const score = -Math.abs(d - want);
-      if (score > bestScore) { bestScore = score; best = [x, z]; }
-    }
-    this.world.goal.place(best[0], best[1], this.player.x, this.player.z);
+    this.hold = 0;
+    this.holdNeed = Math.min(9, 4.5 + L * 0.6);
+    // a safe house that can't be seen from here, a decent walk away
+    const want = Math.min(170, 75 + L * 15);
+    const pick = this.world.pickGoal(this.player.x, this.player.z, want);
+    this.world.goal.place(pick.h);
+    const d = pick.h.door;
     this.hum = this.audio.goalHum();
-    this.hum.setPos({ x: best[0], y: 1.5, z: best[1] });
+    this.hum.setPos({ x: d.x, y: 1.5, z: d.z });
     this.hum.on(true);
     this.audio.bell();
-    const dist = Math.round(Math.hypot(best[0] - this.player.x, best[1] - this.player.z));
+    // a pack of the dead loiters around the safe house
+    const guards = Math.min(10, 3 + L);
+    for (let i = 0; i < guards; i++) this._spawn(true);
     this._hud();
-    this._msg(`LEVEL ${L}`, `Reach the glowing crypt · ${dist}m${L >= 3 ? ' · runners!' : ''}`);
+    this._msg(`LEVEL ${L}`, `Find the safe house · ~${Math.round(pick.d)}m${L >= 2 ? ' · runners!' : ''}`);
   }
   _levelComplete() {
     this.levelDone = 0.001;
     const bonus = 500 * this.level;
     this.score += bonus;
-    this.health = Math.min(100, this.health + 30);
-    this.audio.heartbeatOn = this.health < 35;
+    this.health = Math.min(100, this.health + 35);
+    this.audio.heartbeatOn = false;
     this.audio.levelComplete();
     this.hum.on(false);
-    // the dead collapse as the crypt's light washes over them
-    for (const z of this.zombies) if (z.alive) z.die(this, false);
-    this._msg(`LEVEL ${this.level} COMPLETE`, `+${bonus} · +30 health`);
+    $('fade').classList.add('on');
+    $('fadeTxt').innerHTML = `<b>YOU MADE IT INSIDE</b><span>Level ${this.level} complete · +${bonus} · +35 health</span>`;
     this._hud();
   }
-  _spawn() {
-    let pos, tries = 0;
-    do {
-      const g = this.world.goal.trigger;
-      const toGoal = Math.atan2(g.x - this.player.x, g.z - this.player.z);
-      const a = Math.random() < 0.55 ? toGoal + (Math.random() - 0.5) * 1.6 : Math.random() * Math.PI * 2;
-      const r = 20 + Math.random() * 10;
-      pos = new THREE.Vector3(this.player.x + Math.sin(a) * r, 0, this.player.z + Math.cos(a) * r);
-      const pr = Math.hypot(pos.x, pos.z);
-      if (pr > MAP_R - 1) { pos.x *= (MAP_R - 1) / pr; pos.z *= (MAP_R - 1) / pr; }
-      tries++;
-    } while (tries < 12 && (this.world.colliders.some((c) => Math.hypot(c.x - pos.x, c.z - pos.z) < c.r + 0.8) || Math.hypot(pos.x - this.player.x, pos.z - this.player.z) < 14));
-    pos.y = this.world.groundHeight(pos.x, pos.z);
-    const w = this.level;
-    const runner = w >= 3 && Math.random() < Math.min(0.45, (w - 2) * 0.09);
-    const speed = runner ? 2.4 + Math.random() * 0.8 + w * 0.05 : Math.min(1.5, 0.55 + w * 0.07 + Math.random() * 0.25);
-    const z = new Zombie(this.scene, pos, { speed, runner });
-    z.root.rotation.y = Math.atan2(this.player.x - pos.x, this.player.z - pos.z);
+  _spawn(guard = false) {
+    const W = this.world, P = this.player, g = W.goal.trigger;
+    let pos = null, fallback = null;
+    for (let tries = 0; tries < 30 && !pos; tries++) {
+      let x, z;
+      if (guard) {
+        const a = Math.random() * Math.PI * 2, r = 4 + Math.random() * 10;
+        x = g.x + Math.sin(a) * r; z = g.z + Math.cos(a) * r;
+      } else {
+        const toGoal = Math.atan2(g.x - P.x, g.z - P.z);
+        const a = Math.random() < 0.5 ? toGoal + (Math.random() - 0.5) * 1.8 : Math.random() * Math.PI * 2;
+        const r = 18 + Math.random() * 18;
+        x = P.x + Math.sin(a) * r; z = P.z + Math.cos(a) * r;
+      }
+      if (Math.abs(x) > HALF - 3 || Math.abs(z) > HALF - 3 || !W.nav.open(x, z) || W.col.blocked(x, z, 0.4)) continue;
+      if (Math.hypot(x - P.x, z - P.z) < 14) continue;
+      // prefer spawning out of the player's sight (behind houses)
+      if (!guard && !W.col.sightBlocked(P.x, P.z, x, z) && tries < 20) { fallback = fallback || [x, z]; continue; }
+      pos = [x, z];
+    }
+    pos = pos || fallback;
+    if (!pos) return;
+    const L = this.level;
+    const runner = L >= 2 && Math.random() < Math.min(0.5, 0.15 + (L - 2) * 0.08);
+    const speed = runner ? Math.min(5.0, 4.0 + Math.random() * 0.5 + L * 0.06) : Math.min(1.9, 0.9 + L * 0.08 + Math.random() * 0.4);
+    const z = new Zombie(this.scene, new THREE.Vector3(pos[0], 0, pos[1]), { speed, runner });
+    z.root.rotation.y = Math.random() * Math.PI * 2;
+    z.dormant = guard;
+    z.home = new THREE.Vector3(pos[0], 0, pos[1]);
     z.onFall = () => { const p = new THREE.Vector3(); z.root.getWorldPosition(p); this.audio.bodyFall(p); };
     z.onHeadBounce = (p) => this.audio.squelch(p, 0.5);
     this.zombies.push(z);
@@ -529,17 +537,14 @@ class Game {
         this.flying.splice(i, 1);
         continue;
       }
-      // world colliders
-      let col = null;
-      for (const c of this.world.colliders) {
-        const gy = this.world.groundHeight(c.x, c.z);
-        if (Math.hypot(p1.x - c.x, p1.z - c.z) < c.r && p1.y < gy + c.h) { col = c; break; }
-      }
+      // world solids
+      const col = this.world.col.solidAt(p1.x, p1.y, p1.z);
       const gy = this.world.groundHeight(p1.x, p1.z);
       if (col || p1.y <= gy + 0.05) {
         if (!col) p1.y = gy + 0.05;
-        this._stick(a, this.scene, col ? (col.kind === 'stone' ? 'stone' : 'wood') : 'ground');
-        if (col && col.kind === 'stone') this.audio.stoneClang(p1); else if (col) this.audio.woodThunk(p1); else this.audio.groundThunk(p1);
+        const kind = col ? col.kind : 'ground';
+        this._stick(a, this.scene, kind === 'metal' ? 'metal' : kind);
+        if (kind === 'metal') this.audio.stoneClang(p1); else if (col) this.audio.woodThunk(p1); else this.audio.groundThunk(p1);
         this.emit(p1, new THREE.Vector3(0, 1.2, 0), 1.2, 14, 1);
         this.combo = 0;
         this.flying.splice(i, 1);
@@ -553,8 +558,8 @@ class Game {
     a.snd && a.snd.stop();
     // freeze spin with blade embedded forward
     a.spinner.rotation.x = Math.PI / 2 - 0.35 + (Math.random() - 0.5) * 0.3;
-    if (kind === 'stone') {
-      // bounce off stone and drop
+    if (kind === 'metal') {
+      // bounce off metal and drop
       a.spinner.rotation.x = Math.random() * 6;
       a.obj.position.y = this.world.groundHeight(a.obj.position.x, a.obj.position.z) + 0.04;
       a.obj.rotation.x = Math.PI / 2;
@@ -692,7 +697,35 @@ class Game {
     while (ga > Math.PI) ga -= Math.PI * 2;
     while (ga < -Math.PI) ga += Math.PI * 2;
     $('goalArrow').style.transform = `rotate(${-ga}rad)`;
-    $('goalDist').textContent = Math.round(Math.hypot(gx, gz)) + 'm';
+    const gd = Math.hypot(gx, gz);
+    $('goalDist').textContent = gd < 2.5 ? 'HOLD' : Math.round(gd) + 'm';
+    $('goalArrow').style.visibility = gd < 2.5 ? 'hidden' : 'visible';
+  }
+
+  // decide where a zombie walks this frame
+  _steer(z, dt) {
+    const p = z.root.position, P = this.player;
+    const dist = Math.hypot(P.x - p.x, P.z - p.z);
+    if (z.dormant) {
+      // shamble around near home until the player comes close
+      if (dist < 17) { z.dormant = false; this.audio.zombieVoice(p.clone().setY(1.6), z.runner ? 'scream' : 'snarl', z.pitch); }
+      else {
+        z.wanderT = (z.wanderT || 0) - dt;
+        if (z.wanderT <= 0 || !z.steer) {
+          z.wanderT = 3 + Math.random() * 4;
+          const t = z.home.clone().add(new THREE.Vector3((Math.random() - 0.5) * 8, 0, (Math.random() - 0.5) * 8));
+          z.steer = t;
+        }
+        z.speedMul = Math.hypot(z.steer.x - p.x, z.steer.z - p.z) > 0.6 ? 0.3 / Math.max(0.3, z.speed) : 0;
+        return;
+      }
+    }
+    // lunge when close
+    z.speedMul = dist < 3.5 ? (z.runner ? 1.15 : 1.6) : 1;
+    if (dist < 4) { z.steer = null; return; }
+    let n = this.world.nav.next(p.x, p.z);
+    if (n) n = this.world.nav.next(n[0], n[1]) || n; // look two cells ahead for smoother paths
+    z.steer = n ? new THREE.Vector3(n[0], 0, n[1]) : null;
   }
 
   // ---------- main loop ----------
@@ -733,44 +766,78 @@ class Game {
       const mag = Math.min(1, ml);
       this.moving = mag > 0.12;
       if (this.moving && this.levelDone === 0) {
-        const running = mag > 0.9 || this.keys.ShiftLeft;
+        const wantRun = mag > 0.9 || this.keys.ShiftLeft;
+        if (this.stamina <= 0) this.exhausted = true;
+        if (this.exhausted && this.stamina > 35) this.exhausted = false;
+        const running = wantRun && !this.exhausted;
+        if (running) this.stamina = Math.max(0, this.stamina - 20 * dt);
+        else this.stamina = Math.min(100, this.stamina + 12 * dt);
+        this.isRunning = running;
         const sp = (running ? RUN : WALK) * Math.min(1, mag * 1.15);
         const sy = Math.sin(this.yaw), cy = Math.cos(this.yaw);
         // forward is -Z rotated by yaw
         const vx = (-sy * -my + cy * mx) * sp, vz = (-cy * -my - sy * mx) * sp;
         const P = this.player;
         P.x += vx * dt; P.z += vz * dt;
-        for (const c of this.world.colliders) {
-          const dx = P.x - c.x, dz = P.z - c.z, d = Math.hypot(dx, dz), m = c.r + PLAYER_R;
-          if (d < m && d > 0.0001) { P.x += dx / d * (m - d); P.z += dz / d * (m - d); }
-        }
+        this.world.col.collide(P, PLAYER_R);
         for (const z of this.zombies) {
           if (!z.alive) continue;
           const dx = P.x - z.root.position.x, dz = P.z - z.root.position.z, d = Math.hypot(dx, dz), m = 0.75;
           if (d < m && d > 0.0001) { P.x += dx / d * (m - d); P.z += dz / d * (m - d); }
         }
-        const pr = Math.hypot(P.x, P.z);
-        if (pr > MAP_R) { P.x *= MAP_R / pr; P.z *= MAP_R / pr; }
+        this.world.col.collide(P, PLAYER_R);
         this.stepPh += dt * sp * 1.9;
         if (this.stepPh > Math.PI) { this.stepPh -= Math.PI; this.audio.playerStep(running); }
         this.bobAmt = Math.min(1, (this.bobAmt || 0) + dt * 4) * (running ? 1.4 : 1);
-      } else this.bobAmt = Math.max(0, (this.bobAmt || 0) - dt * 4);
+      } else { this.bobAmt = Math.max(0, (this.bobAmt || 0) - dt * 4); this.stamina = Math.min(100, this.stamina + 22 * dt); this.isRunning = false; }
+      if (this.exhausted) { this.breathT = (this.breathT || 0) - dt; if (this.breathT <= 0) { this.audio.breath(); this.breathT = 0.9; } }
+      $('stamfill').style.width = this.stamina + '%';
+      $('stamfill').className = this.exhausted ? 'out' : '';
       this.player.y = this.world.groundHeight(this.player.x, this.player.z);
 
-      // ---- level: keep zombies coming until the crypt is reached ----
+      // ---- pathfinding field toward the player (zombies follow streets and yards) ----
+      this.navT = (this.navT || 0) - dt;
+      if (this.navT <= 0) { this.world.nav.compute(this.player.x, this.player.z); this.navT = 0.3; }
+
+      // ---- level: reach the safe house and hold the door until it opens ----
       const alive = this.zombies.filter((z) => z.alive).length;
       if (this.levelDone === 0) {
         this.spawnT -= dt;
         if (this.spawnT <= 0 && alive < this.maxAlive) { this._spawn(); this.spawnT = this.spawnInterval * (0.6 + Math.random() * 0.8); }
         const g = this.world.goal.trigger;
-        if (Math.hypot(g.x - this.player.x, g.z - this.player.z) < 1.6) this._levelComplete();
+        const inZone = Math.hypot(g.x - this.player.x, g.z - this.player.z) < 1.9;
+        if (inZone) {
+          this.hold += dt;
+          this.knockT = (this.knockT || 0) - dt;
+          if (this.knockT <= 0) { this.audio.knock(this.world.goal.house.door); this.knockT = 0.9; }
+          // the noise draws every zombie in the area
+          for (const z of this.zombies) z.dormant = false;
+          if (this.hold >= this.holdNeed) this._levelComplete();
+        } else this.hold = Math.max(0, this.hold - dt * 0.5);
+        const hp = $('hold');
+        hp.classList.toggle('hidden', this.hold <= 0);
+        $('holdfill').style.width = Math.min(100, this.hold / this.holdNeed * 100) + '%';
+        $('holdtxt').textContent = inZone ? 'BREAKING IN… HOLD YOUR GROUND' : 'GET BACK TO THE DOOR!';
       } else {
         this.levelDone += dt;
-        if (this.levelDone > 5) this._startLevel();
+        if (this.levelDone > 1.3 && !this.cleared) {
+          // fully black: clear the street, step back outside
+          this.cleared = true;
+          for (const z of this.zombies) z.dispose();
+          this.zombies = [];
+          for (const st of this.stuck) st.obj.parent && st.obj.parent.remove(st.obj);
+          this.stuck = [];
+          const h = this.world.goal.house;
+          this.player.set(h.trigger.x + h.facing.x * 2.5, 0, h.trigger.z + h.facing.z * 2.5);
+          this.yaw = Math.atan2(-h.facing.x, -h.facing.z) + Math.PI;
+          this.pitch = 0; this.stamina = 100; this.exhausted = false;
+          $('hold').classList.add('hidden');
+        }
+        if (this.levelDone > 3.2) { this.cleared = false; $('fade').classList.remove('on'); this._startLevel(); }
       }
       // recycle zombies left far behind
       for (const z of this.zombies) {
-        if (z.alive && Math.hypot(z.root.position.x - this.player.x, z.root.position.z - this.player.z) > 45) z._despawn = true;
+        if (z.alive && !z.dormant && Math.hypot(z.root.position.x - this.player.x, z.root.position.z - this.player.z) > 55) z._despawn = true;
       }
       for (let i = this.zombies.length - 1; i >= 0; i--) if (this.zombies[i]._despawn) { this.zombies[i].dispose(); this.zombies.splice(i, 1); }
     }
@@ -780,6 +847,7 @@ class Game {
       const pp = this.player;
       for (let i = this.zombies.length - 1; i >= 0; i--) {
         const z = this.zombies[i];
+        if (z.alive && playing) this._steer(z, dt);
         const r = z.update(dt, pp, this);
         if (z.alive) {
           // separation & obstacle avoidance
@@ -789,10 +857,7 @@ class Game {
             const dx = p.x - o.root.position.x, dz = p.z - o.root.position.z, d = Math.hypot(dx, dz);
             if (d < 0.7 && d > 0.001) { p.x += dx / d * (0.7 - d) * 0.5; p.z += dz / d * (0.7 - d) * 0.5; }
           }
-          for (const c of this.world.colliders) {
-            const dx = p.x - c.x, dz = p.z - c.z, d = Math.hypot(dx, dz), m = c.r + 0.35;
-            if (d < m && d > 0.001) { p.x += dx / d * (m - d); p.z += dz / d * (m - d); }
-          }
+          this.world.col.collide(p, 0.3);
           p.y = this.world.groundHeight(p.x, p.z);
         }
         if (z.spurt > 0) {

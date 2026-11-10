@@ -330,3 +330,108 @@ export function moonTexture() {
   t.colorSpace = THREE.SRGBColorSpace;
   return t;
 }
+
+// ---------- neighborhood materials ----------
+export function asphaltMaps() {
+  const g = generate(512, (u, v, o) => {
+    const n = fbm(u, v, 8, 6);
+    const grain = fbm(u, v, 128, 2);
+    const crack = Math.pow(clamp(1 - Math.abs(fbm(u + 4, v, 3, 5)) * 22), 3);
+    const patch = clamp((fbm(u + 9, v + 3, 3, 3) - 0.3) * 6);
+    const stain = clamp((fbm(u + 1, v + 6, 5, 4) - 0.1) * 2);
+    let c = 0.15 + n * 0.03 + grain * 0.04 - crack * 0.08 - patch * 0.05 - stain * 0.03;
+    o.r = c; o.g = c; o.b = c * 1.03;
+    o.h = grain * 0.5 - crack * 1.5 + patch * 0.2;
+    o.rough = 0.9 - patch * 0.25 - stain * 0.15;
+  }, { rough: true });
+  return pack(g, 3);
+}
+export function concreteMaps() {
+  const g = generate(256, (u, v, o) => {
+    const n = fbm(u, v, 4, 5);
+    const grain = fbm(u, v, 64, 2);
+    const joint = (Math.min(u, 1 - u) < 0.008 || Math.min(v, 1 - v) < 0.008) ? 1 : 0;
+    const stain = clamp((fbm(u + 3, v, 3, 4) - 0.15) * 2.5);
+    const crack = Math.pow(clamp(1 - Math.abs(fbm(u + 7, v + 2, 2, 5)) * 30), 3);
+    let c = 0.5 + n * 0.06 + grain * 0.04 - stain * 0.12 - joint * 0.25 - crack * 0.2;
+    o.r = c; o.g = c * 0.98; o.b = c * 0.95;
+    o.h = grain * 0.4 - joint * 2 - crack;
+    o.rough = 0.9;
+  }, { rough: true });
+  return pack(g, 3);
+}
+export function sidingMaps() {
+  const g = generate(256, (u, v, o) => {
+    const boards = 8;
+    const t = (v * boards) % 1;
+    const n = fbm(u, v, 4, 4);
+    const grime = clamp(fbm(u + 2, v + 5, 3, 4) * 1.2 + (1 - v) * 0.2);
+    const peel = clamp((fbm(u + 8, v + 1, 6, 4) - 0.5) * 4) * 0.6;
+    let c = 0.82 - grime * 0.22 + n * 0.04 - (t < 0.06 ? 0.35 : 0);
+    o.r = c * (1 - peel * 0.4); o.g = c * (1 - peel * 0.45); o.b = c * (1 - peel * 0.5);
+    o.h = t + n * 0.05 - peel * 0.2;
+    o.rough = 0.8;
+  }, { rough: true });
+  return pack(g, 5);
+}
+export function shingleMaps() {
+  const g = generate(256, (u, v, o) => {
+    const rows = 10, row = Math.floor(v * rows), t = (v * rows) % 1;
+    const tab = Math.floor(u * 6 + (row % 2) * 0.5);
+    const tone = (Math.sin(tab * 12.9898 + row * 78.233) * 43758.5453) % 1;
+    const n = fbm(u, v, 32, 3);
+    const moss = clamp((fbm(u + 3, v + 1, 3, 4) - 0.2) * 3);
+    const edge = t > 0.9 ? 1 : 0;
+    const slit = ((u * 6 + (row % 2) * 0.5) % 1) < 0.03 ? 1 : 0;
+    let c = 0.13 + Math.abs(tone) * 0.07 + n * 0.03 - edge * 0.06 - slit * 0.06;
+    o.r = lerp(c, 0.16, moss * 0.6); o.g = lerp(c, 0.2, moss * 0.6); o.b = lerp(c * 1.05, 0.1, moss * 0.6);
+    o.h = t * 0.6 + n * 0.3 - slit;
+    o.rough = 0.95;
+  }, { rough: true });
+  return pack(g, 4);
+}
+export function brickMaps() {
+  const g = generate(256, (u, v, o) => {
+    const rows = 16, row = Math.floor(v * rows), tv = (v * rows) % 1;
+    const tu = (u * 8 + (row % 2) * 0.5) % 1;
+    const mortar = tv < 0.12 || tu < 0.05;
+    const id = Math.floor(u * 8 + (row % 2) * 0.5) + row * 17;
+    const tone = Math.abs((Math.sin(id * 91.7) * 4375.5) % 1);
+    const n = fbm(u, v, 32, 3);
+    if (mortar) { o.r = o.g = 0.42 + n * 0.05; o.b = 0.4; o.h = 0; }
+    else { o.r = 0.36 + tone * 0.12 + n * 0.05; o.g = 0.16 + tone * 0.05; o.b = 0.11 + tone * 0.03; o.h = 0.6 + n * 0.2; }
+    o.rough = 0.9;
+  }, { rough: true });
+  return pack(g, 4);
+}
+export function plankMaps() {
+  const g = generate(256, (u, v, o) => {
+    const boards = 6, t = (u * boards) % 1;
+    const id = Math.floor(u * boards);
+    const w = fbm(u * 0.3 + id, v * 0.05, 8, 4);
+    const grain = Math.sin((v * 60 + w * 8 + id * 3) * Math.PI) * 0.5 + 0.5;
+    const n = fbm(u, v, 16, 3);
+    const gap = t < 0.05 ? 1 : 0;
+    const weather = 0.6 + Math.abs((Math.sin(id * 37.1) * 99.3) % 1) * 0.3;
+    let c = (0.3 + grain * 0.06 + n * 0.05) * weather - gap * 0.2;
+    o.r = c; o.g = c * 0.8; o.b = c * 0.62;
+    o.h = grain * 0.3 - gap * 2;
+    o.rough = 0.95;
+  }, { rough: true });
+  return pack(g, 4);
+}
+export function lawnMaps() {
+  const g = generate(512, (u, v, o) => {
+    const n = fbm(u, v, 6, 6);
+    const blades = fbm(u, v, 128, 2);
+    const dead = clamp((fbm(u + 2, v + 3, 4, 4) + 0.1) * 2);
+    const dirt = clamp((fbm(u + 5, v + 1, 6, 4) - 0.3) * 4);
+    let r = lerp(0.14, 0.24, dead), gg = lerp(0.2, 0.21, dead), b = lerp(0.08, 0.1, dead);
+    r += blades * 0.05 + n * 0.03; gg += blades * 0.06 + n * 0.03; b += blades * 0.02;
+    r = lerp(r, 0.17, dirt); gg = lerp(gg, 0.13, dirt); b = lerp(b, 0.09, dirt);
+    o.r = r; o.g = gg; o.b = b;
+    o.h = blades * 0.8 + n * 0.3;
+    o.rough = 1;
+  }, { rough: true });
+  return pack(g, 2.5);
+}

@@ -244,21 +244,22 @@ export class Zombie {
 
     const p = this.root.position;
     const dist = Math.hypot(playerPos.x - p.x, playerPos.z - p.z);
-    this.faceTowards(playerPos, dt);
+    this.faceTowards(this.steer || playerPos, dt, this.steer ? 5 : 3);
     this.stagger = Math.max(0, this.stagger - dt);
 
     // voice
     this.voiceTimer -= dt;
-    if (this.voiceTimer <= 0) {
+    if (this.voiceTimer <= 0 && (!this.dormant || Math.random() < 0.3)) {
       this.getHeadWorld(this.headPos);
       game.audio.zombieVoice(this.headPos, this.runner && Math.random() < 0.5 ? 'scream' : (dist < 4 ? 'snarl' : 'groan'), this.pitch);
       this.voiceTimer = 2.5 + Math.random() * 5;
     }
 
-    const ph = this.t * (this.runner ? 9 : 3.6) * (0.6 + this.speed * 0.5);
+    const effSpeed = this.speed * (this.speedMul === undefined ? 1 : this.speedMul);
+    const ph = this.t * (this.runner ? 9 : 3.6) * (0.6 + Math.min(this.speed, effSpeed + 0.3) * 0.5);
     if (dist > 1.15) {
       this.state = 'walk';
-      const sp = this.speed * (this.stagger > 0 ? 0.1 : 1) * (1 - this.limp * 0.3 * Math.max(0, Math.sin(ph)));
+      const sp = this.speed * (this.speedMul === undefined ? 1 : this.speedMul) * (this.stagger > 0 ? 0.1 : 1) * (this.runner ? 1 : 1 - this.limp * 0.3 * Math.max(0, Math.sin(ph)));
       p.x += Math.sin(this.root.rotation.y) * sp * dt;
       p.z += Math.cos(this.root.rotation.y) * sp * dt;
     } else {

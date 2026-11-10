@@ -509,6 +509,36 @@ export class Audio3D {
     return this._hum;
   }
 
+  // pounding / prying at the safe-house door
+  knock(pos) {
+    const ctx = this.ctx, t = ctx.currentTime, out = this.panner(pos);
+    for (let k = 0; k < 2; k++) {
+      const st = t + k * 0.22;
+      const o = ctx.createOscillator(); o.frequency.setValueAtTime(130, st); o.frequency.exponentialRampToValueAtTime(60, st + 0.12);
+      const g = ctx.createGain(); this._env(g, st, 0.002, 1.1, 0.16);
+      o.connect(g).connect(out); o.start(st); o.stop(st + 0.2);
+      const n = this._noiseSrc(); const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 900; f.Q.value = 1.2;
+      const ng = ctx.createGain(); this._env(ng, st, 0.001, 0.6, 0.08);
+      n.connect(f).connect(ng).connect(out); n.start(st, Math.random()); n.stop(st + 0.1);
+    }
+    // wood creak
+    if (Math.random() < 0.4) {
+      const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.setValueAtTime(180, t + 0.5); o.frequency.linearRampToValueAtTime(120, t + 0.9);
+      const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 700; bp.Q.value = 8;
+      const g = ctx.createGain(); this._env(g, t + 0.5, 0.05, 0.12, 0.4);
+      o.connect(bp).connect(g).connect(out); o.start(t + 0.5); o.stop(t + 1);
+    }
+  }
+  // heavy breathing when out of stamina
+  breath() {
+    const ctx = this.ctx, t = ctx.currentTime;
+    [[0, 0.32, 1400], [0.4, 0.4, 900]].forEach(([d, len, f]) => {
+      const n = this._noiseSrc(); const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = 1.4;
+      const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t + d); g.gain.exponentialRampToValueAtTime(0.22, t + d + len * 0.4); g.gain.exponentialRampToValueAtTime(0.0001, t + d + len);
+      n.connect(bp).connect(g).connect(this.sfx); n.start(t + d, Math.random()); n.stop(t + d + len + 0.05);
+    });
+  }
+
   levelComplete() {
     const ctx = this.ctx, t = ctx.currentTime;
     [261.6, 329.6, 392, 523.2].forEach((f, i) => {
